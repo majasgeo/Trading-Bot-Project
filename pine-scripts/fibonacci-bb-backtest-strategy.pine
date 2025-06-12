@@ -1,0 +1,251 @@
+//@version=5
+strategy("Fibonacci + BB Confluence Backtest", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// ============================================================================
+// SIMPLIFIED BACKTESTING ALGORITHM
+// Συνδυάζει Extended Fibonacci + Dynamic Bollinger Bands για backtesting
+// Βασισμένο στην έρευνα από τις 22 συζητήσεις
+// ============================================================================
+
+// === BACKTEST SETTINGS ===
+start_date = input.time(timestamp("2022-01-01 00:00"), "Backtest Start Date")
+end_date = input.time(timestamp("2025-12-31 23:59"), "Backtest End Date")
+enable_backtest = input.bool(true, "Enable Backtesting")
+
+// === STRATEGY SETTINGS ===
+// Fibonacci Settings
+fib_lookback = input.int(15, "Fibonacci Lookback", minval=5, maxval=50)
+use_fibonacci = input.bool(true, "Use Fibonacci Signals")
+
+// Bollinger Bands Settings (από την έρευνά σου)
+bb_wma_length = input.int(10, "BB WMA Length", minval=5, maxval=50)
+bb_std_multiplier = input.float(1.618, "BB StdDev Multiplier (Golden Ratio)", minval=0.5, maxval=5.0, step=0.1)
+use_bollinger = input.bool(true, "Use Bollinger Band Signals")
+
+// Mathematical Constants (από Chat 11)
+use_math_constants = input.bool(true, "Use Mathematical Constants")
+
+// Risk Management
+stop_loss_pct = input.float(5.0, "Stop Loss %", minval=1.0, maxval=20.0, step=0.5)
+take_profit_pct = input.float(10.0, "Take Profit %", minval=2.0, maxval=50.0, step=1.0)
+
+// Confluence Requirements
+min_confluence_score = input.int(3, "Minimum Confluence Score", minval=1, maxval=10)
+
+// === TECHNICAL CALCULATIONS ===
+
+// WMA Bollinger Bands (από Chat 10)
+wma_value = ta.wma(close, bb_wma_length)
+std_dev = ta.stdev(close, bb_wma_length)
+bb_upper = wma_value + (std_dev * bb_std_multiplier)
+bb_middle = wma_value
+bb_lower = wma_value - (std_dev * bb_std_multiplier)
+
+// Mathematical Constants Bollinger Bands (από Chat 11)
+golden_ratio = 1.618033988749
+pi_constant = 3.141592653589
+math_multiplier_golden = golden_ratio - 0.26      // ≈ 1.358
+math_multiplier_pi = pi_constant - 0.0196         // ≈ 3.122
+
+bb_golden = wma_value - (std_dev * math_multiplier_golden)
+bb_pi = wma_value + (std_dev * math_multiplier_pi)
+
+// Extended Fibonacci Levels (από Chat 1, 15)
+swing_high = ta.pivothigh(high, fib_lookback, fib_lookback)
+swing_low = ta.pivotlow(low, fib_lookback, fib_lookback)
+
+var float last_swing_high = na
+var float last_swing_low = na
+var int last_high_bar = na
+var int last_low_bar = na
+
+if not na(swing_high)
+    last_swing_high := swing_high
+    last_high_bar := bar_index - fib_lookback
+
+if not na(swing_low)
+    last_swing_low := swing_low
+    last_low_bar := bar_index - fib_lookback
+
+// Fibonacci Extensions
+var float fib_618_ext = na
+var float fib_1618_ext = na
+var float fib_2618_ext = na
+
+if not na(last_swing_high) and not na(last_swing_low)
+    fib_range = last_swing_high - last_swing_low
+    is_bullish = last_low_bar > last_high_bar
+    
+    if is_bullish
+        fib_618_ext := last_swing_low + (fib_range * 1.618)
+        fib_1618_ext := last_swing_low + (fib_range * 2.618)
+        fib_2618_ext := last_swing_low + (fib_range * 3.618)
+    else
+        fib_618_ext := last_swing_high - (fib_range * 1.618)
+        fib_1618_ext := last_swing_high - (fib_range * 2.618)
+        fib_2618_ext := last_swing_high - (fib_range * 3.618)
+
+// RSI για divergence context
+rsi = ta.rsi(close, 14)
+
+// Volume analysis
+volume_avg = ta.sma(volume, 20)
+volume_spike = volume > volume_avg * 1.5
+
+// === CONFLUENCE SCORING SYSTEM ===
+confluence_score = 0
+
+// +2 points: Fibonacci confluence
+fib_confluence = false
+if use_fibonacci and not na(fib_618_ext)
+    if math.abs(close - fib_618_ext) / close * 100 < 2.0 or
+       math.abs(close - fib_1618_ext) / close * 100 < 2.0 or
+       math.abs(close - fib_2618_ext) / close * 100 < 2.0
+        fib_confluence := true
+        confluence_score += 2
+
+// +3 points: Bollinger Band confluence
+bb_confluence = false
+if use_bollinger
+    if close <= bb_lower or close >= bb_upper
+        bb_confluence := true
+        confluence_score += 3
+    else if math.abs(close - bb_middle) / close * 100 < 1.0
+        confluence_score += 1
+
+// +2 points: Mathematical constants confluence
+math_confluence = false
+if use_math_constants
+    if math.abs(close - bb_golden) / close * 100 < 1.5 or
+       math.abs(close - bb_pi) / close * 100 < 1.5
+        math_confluence := true
+        confluence_score += 2
+
+// +2 points: RSI extreme conditions
+rsi_confluence = false
+if rsi < 30 or rsi > 70
+    rsi_confluence := true
+    confluence_score += 2
+
+// +1 point: Volume spike
+if volume_spike
+    confluence_score += 1
+
+// === SIGNAL GENERATION ===
+// Bullish Signals
+bullish_bb = close <= bb_lower and bb_confluence
+bullish_fib = close <= fib_618_ext and fib_confluence and not na(last_swing_low) and last_low_bar > last_high_bar
+bullish_rsi = rsi < 30 and rsi > rsi[1]  // RSI oversold and turning up
+bullish_math = close <= bb_golden and math_confluence
+
+bullish_signal = (bullish_bb or bullish_fib or bullish_math) and confluence_score >= min_confluence_score
+
+// Bearish Signals  
+bearish_bb = close >= bb_upper and bb_confluence
+bearish_fib = close >= fib_618_ext and fib_confluence and not na(last_swing_high) and last_high_bar > last_low_bar
+bearish_rsi = rsi > 70 and rsi < rsi[1]  // RSI overbought and turning down
+bearish_math = close >= bb_pi and math_confluence
+
+bearish_signal = (bearish_bb or bearish_fib or bearish_math) and confluence_score >= min_confluence_score
+
+// === STRATEGY EXECUTION ===
+// Entry Conditions
+long_condition = bullish_signal and strategy.position_size == 0
+short_condition = bearish_signal and strategy.position_size == 0
+
+// Backtest Date Range
+in_date_range = time >= start_date and time <= end_date
+
+// Execute Trades
+if enable_backtest and in_date_range
+    if long_condition
+        strategy.entry("Long", strategy.long, comment="BULL CONFLUENCE: " + str.tostring(confluence_score))
+        
+    if short_condition
+        strategy.entry("Short", strategy.short, comment="BEAR CONFLUENCE: " + str.tostring(confluence_score))
+
+// Exit Conditions
+if strategy.position_size > 0  // Long position
+    strategy.exit("Long TP/SL", "Long", profit=close * take_profit_pct / 100, loss=close * stop_loss_pct / 100)
+    
+if strategy.position_size < 0  // Short position
+    strategy.exit("Short TP/SL", "Short", profit=close * take_profit_pct / 100, loss=close * stop_loss_pct / 100)
+
+// === VISUAL ELEMENTS ===
+// Plot Bollinger Bands
+plot(bb_upper, "BB Upper", color=color.red, linewidth=1)
+plot(bb_middle, "BB Middle (WMA)", color=color.blue, linewidth=2)
+plot(bb_lower, "BB Lower", color=color.green, linewidth=1)
+
+// Plot Mathematical Constants
+plot(bb_golden, "BB Golden", color=color.yellow, linewidth=1, style=plot.style_circles)
+plot(bb_pi, "BB Pi", color=color.purple, linewidth=1, style=plot.style_circles)
+
+// Plot Fibonacci Extensions
+plot(fib_618_ext, "Fib 1.618", color=color.orange, linewidth=1, style=plot.style_cross)
+plot(fib_1618_ext, "Fib 2.618", color=color.maroon, linewidth=1, style=plot.style_cross)
+
+// Bollinger Band Fill
+fill_upper = plot(bb_upper, color=na)
+fill_lower = plot(bb_lower, color=na)
+fill(fill_upper, fill_lower, color=color.new(color.blue, 95))
+
+// Signal Shapes
+plotshape(bullish_signal, "Bullish Signal", shape.triangleup, location.belowbar, 
+          color=color.green, size=size.normal)
+plotshape(bearish_signal, "Bearish Signal", shape.triangledown, location.abovebar, 
+          color=color.red, size=size.normal)
+
+// Confluence Score
+bgcolor(confluence_score >= min_confluence_score ? 
+        (bullish_signal ? color.new(color.green, 90) : 
+         bearish_signal ? color.new(color.red, 90) : na) : na)
+
+// === INFORMATION TABLE ===
+var table info_table = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 80), border_width=1)
+
+if barstate.islast
+    table.cell(info_table, 0, 0, "CONFLUENCE BACKTEST", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 0, "STATUS", text_color=color.white, text_size=size.small)
+    
+    table.cell(info_table, 0, 1, "Confluence Score", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 1, str.tostring(confluence_score) + "/10", 
+               text_color=confluence_score >= min_confluence_score ? color.green : color.gray, text_size=size.tiny)
+    
+    table.cell(info_table, 0, 2, "BB Position", text_color=color.white, text_size=size.tiny)
+    bb_pos = close > bb_upper ? "ABOVE UPPER" : close < bb_lower ? "BELOW LOWER" : "MIDDLE ZONE"
+    bb_color = close > bb_upper ? color.red : close < bb_lower ? color.green : color.gray
+    table.cell(info_table, 1, 2, bb_pos, text_color=bb_color, text_size=size.tiny)
+    
+    table.cell(info_table, 0, 3, "RSI", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 3, str.tostring(rsi, "#.1"), 
+               text_color=rsi > 70 ? color.red : rsi < 30 ? color.green : color.gray, text_size=size.tiny)
+    
+    table.cell(info_table, 0, 4, "Fibonacci", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 4, fib_confluence ? "CONFLUENCE" : "NORMAL", 
+               text_color=fib_confluence ? color.yellow : color.gray, text_size=size.tiny)
+    
+    table.cell(info_table, 0, 5, "Math Constants", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 5, math_confluence ? "CONFLUENCE" : "NORMAL", 
+               text_color=math_confluence ? color.purple : color.gray, text_size=size.tiny)
+    
+    table.cell(info_table, 0, 6, "Volume", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 6, volume_spike ? "SPIKE" : "NORMAL", 
+               text_color=volume_spike ? color.orange : color.gray, text_size=size.tiny)
+    
+    // Strategy Stats
+    total_trades = strategy.closed_trades
+    win_rate = total_trades > 0 ? strategy.won_trades / total_trades * 100 : 0
+    table.cell(info_table, 0, 7, "Win Rate", text_color=color.white, text_size=size.tiny)
+    table.cell(info_table, 1, 7, str.tostring(win_rate, "#.1") + "%", 
+               text_color=win_rate > 50 ? color.green : color.red, text_size=size.tiny)
+
+// === ALERTS FOR SIGNALS ===
+alertcondition(bullish_signal, title="Bullish Confluence Signal", 
+               message="🚀 BULLISH CONFLUENCE: Score " + str.tostring(confluence_score) + "/10")
+
+alertcondition(bearish_signal, title="Bearish Confluence Signal",
+               message="🔻 BEARISH CONFLUENCE: Score " + str.tostring(confluence_score) + "/10")
+
+alertcondition(confluence_score >= 8, title="Nuclear Confluence Signal",
+               message="💎 NUCLEAR CONFLUENCE: Score " + str.tostring(confluence_score) + "/10 - High Probability Setup!")
