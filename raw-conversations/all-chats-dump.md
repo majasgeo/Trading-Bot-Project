@@ -1,18 +1,14 @@
 # All Chats Dump
 
-This file contains all previous conversations and discussions about trading strategies, Pine Script development, and bot algorithms.
+Αυτό το αρχείο περιέχει όλες τις raw συνομιλίες που θα οργανωθούν μετά σε ξεχωριστά αρχεία.
 
-## Instructions
-
-- Paste all previous chat conversations below
-- Include timestamps where available
-- Separate different chat sessions with horizontal lines (---)
-- Keep the original formatting as much as possible
-
-## Chat History
-
-<!-- Paste your chat conversations below this line -->
+## Οδηγίες Χρήσης
+1. Paste τις συνομιλίες εδώ
+2. Θα τις οργανώσω σε ξεχωριστά αρχεία
+3. Κάθε συνομιλία θα έχει το δικό της αρχείο με descriptive όνομα
 
 ---
 
-*This file will be organized and categorized later into separate topic-specific files.*
+# Chat 1
+
+[Η συνομιλία θα προστεθεί στο επόμενο μήνυμα]
